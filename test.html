@@ -1,0 +1,5484 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="ResearchLink؛ شبکه همکاری پژوهشی دانشگاه علوم پزشکی قم">
+<title>ResearchLink | ریسرچ لینک</title>
+
+<script src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js" crossorigin></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.25.6/babel.min.js" crossorigin></script>
+
+<link rel="stylesheet" href="https://c7n.ir/fonts/sahel/load.css">
+<link rel="stylesheet" href="test.css">
+</head>
+
+<body>
+
+<div id="root">
+  <div id="boot-msg">
+    در حال بارگذاری… (اگر بیش از چند ثانیه طول کشید، اینترنت یا فایروال را بررسی کنید)
+  </div>
+</div>
+
+<div id="error-box"></div>
+
+<script>
+window.addEventListener('error', function (e) {
+  var box = document.getElementById('error-box');
+  box.style.display = 'block';
+  box.textContent =
+    'خطا: ' +
+    (e.message || e) +
+    (e.filename ? ('\nفایل: ' + e.filename + ':' + e.lineno) : '');
+});
+
+window.addEventListener('DOMContentLoaded', function () {
+  setTimeout(function () {
+    if (!window.__RL_MOUNTED__) {
+      var box = document.getElementById('error-box');
+
+      box.style.display = 'block';
+
+      box.textContent +=
+        (box.textContent ? '\n' : '') +
+        'اپلیکیشن مانت نشد. اگر خطای دیگری بالا نیامده، احتمالاً اسکریپت‌های React/Babel از CDN لود نشده‌اند (اینترنت/فایروال را بررسی کنید).\n' +
+        'React loaded: ' + (typeof React !== 'undefined') +
+        ' | ReactDOM loaded: ' + (typeof ReactDOM !== 'undefined') +
+        ' | Babel loaded: ' + (typeof Babel !== 'undefined');
+    }
+  }, 4000);
+});
+</script>
+
+
+<script type="text/babel" data-presets="react">
+
+const { useState, useEffect } = React;
+
+
+/* =========================================================
+   Persian Calendar Helpers
+   ========================================================= */
+
+const PERSIAN_MONTHS = [
+  "فروردین",
+  "اردیبهشت",
+  "خرداد",
+  "تیر",
+  "مرداد",
+  "شهریور",
+  "مهر",
+  "آبان",
+  "آذر",
+  "دی",
+  "بهمن",
+  "اسفند"
+];
+
+function toFaDigits(v) {
+  const map = {
+    "0":"۰",
+    "1":"۱",
+    "2":"۲",
+    "3":"۳",
+    "4":"۴",
+    "5":"۵",
+    "6":"۶",
+    "7":"۷",
+    "8":"۸",
+    "9":"۹"
+  };
+
+  return String(v).replace(/[0-9]/g, (d) => map[d]);
+}
+
+function toEnglishDigits(value) {
+  const fa = "۰۱۲۳۴۵۶۷۸۹";
+  const ar = "٠١٢٣٤٥٦٧٨٩";
+
+  return String(value)
+    .replace(/[۰-۹]/g, (d) => fa.indexOf(d))
+    .replace(/[٠-٩]/g, (d) => ar.indexOf(d));
+}
+
+
+/*
+  استفاده از تقویم فارسی خود مرورگر.
+  بنابراین نیازی به API یا بک‌اند برای تاریخ نداریم.
+*/
+const persianDateFormatter = new Intl.DateTimeFormat(
+  "fa-IR-u-ca-persian",
+  {
+    year: "numeric",
+    month: "numeric",
+    day: "numeric"
+  }
+);
+
+
+function getPersianDateParts(date) {
+
+  const parts = persianDateFormatter.formatToParts(date);
+
+  const get = (type) => {
+
+    const part = parts.find(
+      (p) => p.type === type
+    );
+
+    return Number(
+      toEnglishDigits(part?.value || "0")
+    );
+  };
+
+  return {
+    year: get("year"),
+    month: get("month"),
+    day: get("day")
+  };
+}
+
+
+/*
+  پیدا کردن روز اول ماه شمسی
+*/
+function startOfPersianMonth(date) {
+
+  const d = new Date(date);
+
+  d.setHours(12, 0, 0, 0);
+
+  while (
+    getPersianDateParts(d).day !== 1
+  ) {
+    d.setDate(d.getDate() - 1);
+  }
+
+  return d;
+}
+
+
+/*
+  ساخت روزهای ماه شمسی
+*/
+function buildPersianCalendar(startDate) {
+
+  const firstDay = new Date(startDate);
+
+  const monthInfo =
+    getPersianDateParts(firstDay);
+
+
+  /*
+    JavaScript:
+    Sunday = 0
+    Monday = 1
+    ...
+    Saturday = 6
+
+    تقویم فارسی از شنبه شروع می‌شود.
+  */
+  const offset =
+    (firstDay.getDay() + 1) % 7;
+
+
+  const days = [];
+
+
+  // خانه‌های خالی قبل از روز اول ماه
+  for (let i = 0; i < offset; i++) {
+
+    days.push(null);
+
+  }
+
+
+  const d = new Date(firstDay);
+
+
+  while (true) {
+
+    const info =
+      getPersianDateParts(d);
+
+
+    // وقتی وارد ماه بعد شدیم، تمام
+    // روزهای ماه فعلی ساخته شده‌اند.
+    if (
+      info.year !== monthInfo.year ||
+      info.month !== monthInfo.month
+    ) {
+      break;
+    }
+
+
+    days.push({
+      day: info.day,
+      year: info.year,
+      month: info.month,
+      date: new Date(d)
+    });
+
+
+    d.setDate(
+      d.getDate() + 1
+    );
+  }
+
+
+  return days;
+}
+
+
+/* =========================================================
+   Demo Data
+   ========================================================= */
+
+const FIELDS = [
+  "بیوانفورماتیک پزشکی",
+  "اپیدمیولوژی",
+  "نانوتکنولوژی دارویی",
+  "داده‌کاوی سلامت",
+  "ژنتیک پزشکی",
+  "هوش مصنوعی در پزشکی"
+];
+
+const SKILLS = [
+  "پایتون",
+  "R",
+  "آمار",
+  "تحلیل داده",
+  "یادگیری ماشین",
+  "مرور نظام‌مند",
+  "تکنیک‌های آزمایشگاهی",
+  "نگارش علمی",
+  "شیمی دارویی"
+];
+
+const LEVELS = [
+  "دانشجوی پزشکی",
+  "دانشجوی تحصیلات تکمیلی",
+  "دستیار تخصصی",
+  "دستیار پژوهشی"
+];
+
+const HOURS = [
+  "کمتر از ۵ ساعت در هفته",
+  "۵ تا ۱۰ ساعت در هفته",
+  "۱۰ تا ۲۰ ساعت در هفته",
+  "بیش از ۲۰ ساعت در هفته"
+];
+
+const DURATIONS = [
+  "۱ تا ۳ ماه",
+  "۳ تا ۶ ماه",
+  "۶ ماه به بالا"
+];
+
+const TYPES = [
+  "پژوهش بالینی",
+  "علوم پایه",
+  "پژوهش آزمایشگاهی",
+  "مرور نظام‌مند",
+  "تحلیل داده",
+  "هوش مصنوعی / یادگیری ماشین",
+  "مطالعه اپیدمیولوژیک"
+];
+
+
+const seedProfessors = [
+  {
+    id: "p1",
+    name: "دکتر فائزه حسین زاده",
+    department: "علوم سلولی کاربردی",
+    meta: "۱۲ مقاله · ۳ طرح",
+    university: "دانشگاه علوم پزشکی قم",
+    bio: "گروه مهندسی بافت، دانشکده پزشکی"
+  },
+  {
+    id: "p2",
+    name: "دکتر محمد آقاعلی",
+    department: "اپیدمیولوژی",
+    meta: "۸ مقاله · ۶ پایان‌نامه",
+    university: "دانشگاه علوم پزشکی قم",
+    bio: "پژوهش روی عوامل خطر بیماری‌های مزمن در جمعیت شهری."
+  },
+  {
+    id: "p3",
+    name: "دکتر زهرا طاهری خرامه",
+    department: "سلامت معنوی",
+    meta: "۱۵ مقاله · ۲ پتنت",
+    university: "دانشگاه علوم پزشکی قم",
+    bio: "آموزش بهداشت و ارتقا سلامت"
+  },
+  {
+    id: "p4",
+    name: "دکتر هادی سردارآبادی",
+    department: "نانوفناوری پزشکی",
+    meta: "۱۰ مقاله · صنعت",
+    university: "دانشگاه علوم پزشکی قم",
+    bio: "گروه فیزیولوژی، فارماکولوژی و فیزیک پزشکی"
+  },
+  {
+    id: "p5",
+    name: "دکتر فاطمه حیدری",
+    department: "گروه علوم تشریح",
+    meta: "۹ مقاله · ۱ پتنت",
+    university: "دانشگاه علوم پزشکی قم",
+    bio: "مطالعات حیوانی"
+  },
+  {
+    id: "p6",
+    name: "دکتر هدی ابولحسنی",
+    department: "گروه فارماکولوژی",
+    meta: "۱۴ مقاله · ۲ طرح",
+    university: "دانشگاه علوم پزشکی قم",
+    bio: "پژوهش روی تاثیر عصاره گل قاصدک بر سرطان سینه"
+  }
+];
+
+
+const seedProjects = [
+  {
+    id: "pr1",
+    professorId: "p1",
+    title: "تحلیل داده‌های ژنومی با بیوانفورماتیک",
+    field: "بیوانفورماتیک پزشکی",
+    type: "تحلیل داده",
+    description: "پروفایل‌گیری از داده‌های توالی‌یابی نسل جدید برای شناسایی نشانگرهای زیستی مرتبط با پاسخ به درمان.",
+    question: "کدام نشانگرهای ژنومی با پاسخ درمانی بیماران همبستگی دارند؟",
+    requiredSkills: ["پایتون", "تحلیل داده", "آمار"],
+    level: "دانشجوی پزشکی",
+    members: 3,
+    time: "۵ تا ۱۰ ساعت در هفته",
+    duration: "۳ تا ۶ ماه",
+    deadline: "۱۴۰۵/۰۷/۱۵",
+    status: "باز"
+  },
+  {
+    id: "pr2",
+    professorId: "p6",
+    title: "تشخیص مبتنی بر هوش مصنوعی سرطان",
+    field: "هوش مصنوعی در پزشکی",
+    type: "هوش مصنوعی / یادگیری ماشین",
+    description: "توسعه و اعتبارسنجی یک خط پردازش یادگیری عمیق برای تشخیص زودهنگام سرطان روی تصاویر پزشکی.",
+    question: "آیا یک مدل یادگیری عمیق می‌تواند به دقت تشخیصی سطح متخصص برسد؟",
+    requiredSkills: ["پایتون", "یادگیری ماشین"],
+    level: "دانشجوی تحصیلات تکمیلی",
+    members: 2,
+    time: "۱۰ تا ۲۰ ساعت در هفته",
+    duration: "۶ ماه به بالا",
+    deadline: "۱۴۰۵/۰۸/۰۱",
+    status: "باز"
+  },
+  {
+    id: "pr3",
+    professorId: "p2",
+    title: "عوامل خطر سندرم متابولیک در بزرگسالان شهری",
+    field: "اپیدمیولوژی",
+    type: "مطالعه اپیدمیولوژیک",
+    description: "تحلیل یک کوهورت بزرگ برای بررسی عوامل خطر سبک زندگی و اقتصادی-اجتماعی سندرم متابولیک.",
+    question: "کدام عوامل خطر قابل‌تغییر، قوی‌ترین پیش‌بینی‌کننده بروز بیماری هستند؟",
+    requiredSkills: ["R", "آمار", "مرور نظام‌مند"],
+    level: "دانشجوی تحصیلات تکمیلی",
+    members: 4,
+    time: "۱۰ تا ۲۰ ساعت در هفته",
+    duration: "۶ ماه به بالا",
+    deadline: "۱۴۰۵/۰۷/۳۰",
+    status: "باز"
+  },
+  {
+    id: "pr4",
+    professorId: "p3",
+    title: "سامانه دارورسانی نانویی هدفمند",
+    field: "نانوتکنولوژی دارویی",
+    type: "پژوهش آزمایشگاهی",
+    description: "طراحی و ارزیابی نانوذرات هدفمند برای افزایش کارایی دارورسانی در بافت‌های سرطانی.",
+    question: "کدام ترکیب نانوذره، بیشترین انتخاب‌پذیری بافتی را نشان می‌دهد؟",
+    requiredSkills: ["تکنیک‌های آزمایشگاهی", "شیمی دارویی"],
+    level: "دانشجوی پزشکی",
+    members: 3,
+    time: "کمتر از ۵ ساعت در هفته",
+    duration: "۳ تا ۶ ماه",
+    deadline: "۱۴۰۵/۰۷/۲۰",
+    status: "باز"
+  },
+  {
+    id: "pr5",
+    professorId: "p4",
+    title: "مدل‌سازی داده‌های سلامت با یادگیری ماشین",
+    field: "داده‌کاوی سلامت",
+    type: "هوش مصنوعی / یادگیری ماشین",
+    description: "ساخت مدل پیش‌بینی بازگشت بیمار به بیمارستان بر اساس داده‌های پرونده الکترونیک سلامت.",
+    question: "کدام ویژگی‌های بالینی، بهترین پیش‌بینی‌کننده بازگشت بیمار هستند؟",
+    requiredSkills: ["پایتون", "یادگیری ماشین", "آمار"],
+    level: "دانشجوی تحصیلات تکمیلی",
+    members: 2,
+    time: "۱۰ تا ۲۰ ساعت در هفته",
+    duration: "۶ ماه به بالا",
+    deadline: "۱۴۰۵/۰۸/۱۰",
+    status: "باز"
+  },
+  {
+    id: "pr6",
+    professorId: "p5",
+    title: "بررسی ژنتیکی بیماری‌های نادر",
+    field: "ژنتیک پزشکی",
+    type: "علوم پایه",
+    description: "شناسایی جهش‌های مسبب در خانواده‌های مبتلا به یک بیماری نادر ژنتیکی با روش توالی‌یابی اگزوم.",
+    question: "کدام جهش‌های ژنتیکی با فنوتیپ بالینی مشاهده‌شده مرتبط هستند؟",
+    requiredSkills: ["تکنیک‌های آزمایشگاهی", "تحلیل داده"],
+    level: "دانشجوی پزشکی",
+    members: 3,
+    time: "۵ تا ۱۰ ساعت در هفته",
+    duration: "۳ تا ۶ ماه",
+    deadline: "۱۴۰۵/۰۷/۲۵",
+    status: "باز"
+  }
+];
+
+
+const seedStudents = [
+  {
+    id: "s1",
+    name: "رضا ابراهیمی",
+    university: "دانشگاه علوم پزشکی قم",
+    major: "پزشکی",
+    level: "دانشجوی پزشکی",
+    interests: ["هوش مصنوعی در پزشکی", "داده‌کاوی سلامت"],
+    skills: ["پایتون", "تحلیل داده"],
+    availability: "۱۰ تا ۲۰ ساعت در هفته",
+    bio: "دانشجوی سال چهارم پزشکی، علاقه‌مند به هوش مصنوعی در تشخیص."
+  },
+  {
+    id: "s2",
+    name: "نیلوفر صادقی",
+    university: "دانشگاه علوم پزشکی قم",
+    major: "بهداشت عمومی",
+    level: "دانشجوی تحصیلات تکمیلی",
+    interests: ["اپیدمیولوژی"],
+    skills: ["R", "آمار"],
+    availability: "۱۰ تا ۲۰ ساعت در هفته",
+    bio: "دانشجوی MPH با تمرکز بر روش‌های اپیدمیولوژیک."
+  }
+];
+
+
+const seedApplications = [
+  {
+    id: "a1",
+    projectId: "pr2",
+    studentId: "s1",
+    status: "در حال بررسی",
+    message: "پیش‌تر با مدل‌های یادگیری عمیق روی تصاویر پزشکی کار کرده‌ام و مشتاق مشارکت در این پروژه‌ام.",
+    createdAt: "۱۴۰۵/۰۵/۱۰"
+  }
+];
+
+
+/* =========================================================
+   Matching Logic
+   ========================================================= */
+
+function matchStudentToProject(student, project) {
+
+  const reasons = [];
+
+  let score = 0;
+  let max = 0;
+
+
+  max += 40;
+
+  if (
+    student.interests.includes(project.field)
+  ) {
+
+    score += 40;
+
+    reasons.push({
+      ok: true,
+      label: `تناسب با علاقه شما به ${project.field}`
+    });
+
+  } else {
+
+    reasons.push({
+      ok: false,
+      label: `در فهرست علایق شما نیست (${project.field})`
+    });
+
+  }
+
+
+  max += 35;
+
+  const overlap =
+    project.requiredSkills.filter(
+      (s) => student.skills.includes(s)
+    );
+
+  const skillScore =
+    project.requiredSkills.length
+      ? Math.round(
+          (overlap.length /
+            project.requiredSkills.length) *
+            35
+        )
+      : 0;
+
+  score += skillScore;
+
+
+  if (overlap.length > 0) {
+
+    reasons.push({
+      ok: true,
+      label:
+        `${toFaDigits(overlap.length)} مهارت مشترک: ${overlap.join('، ')}`
+    });
+
+  } else {
+
+    reasons.push({
+      ok: false,
+      label: "هیچ مهارت مشترکی وجود ندارد"
+    });
+
+  }
+
+
+  max += 15;
+
+  if (
+    student.availability === project.time
+  ) {
+
+    score += 15;
+
+    reasons.push({
+      ok: true,
+      label: "زمان در دسترس با نیاز پروژه تطبیق دارد"
+    });
+
+  } else {
+
+    reasons.push({
+      ok: false,
+      label: "زمان در دسترس با پروژه متفاوت است"
+    });
+
+  }
+
+
+  max += 10;
+
+  if (
+    student.level === project.level
+  ) {
+
+    score += 10;
+
+    reasons.push({
+      ok: true,
+      label: "سطح تحصیلی با نیاز پروژه تطبیق دارد"
+    });
+
+  } else {
+
+    reasons.push({
+      ok: false,
+      label: `سطح ترجیحی: ${project.level}`
+    });
+
+  }
+
+
+  return {
+    percent: Math.round((score / max) * 100),
+    reasons
+  };
+}
+
+
+function statusBadgeClass(status) {
+
+  if (
+    ["باز", "پذیرفته‌شده", "فهرست کوتاه"]
+      .includes(status)
+  ) {
+    return "badge-success";
+  }
+
+  if (
+    ["در حال بررسی", "ارسال‌شده"]
+      .includes(status)
+  ) {
+    return "badge-cyan";
+  }
+
+  if (
+    ["رد شده", "بسته"]
+      .includes(status)
+  ) {
+    return "badge-danger";
+  }
+
+  return "badge-neutral";
+}
+
+
+/* =========================================================
+   Small Building Blocks
+   ========================================================= */
+
+function Icon({ path, size = 18 }) {
+
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+    >
+      {path}
+    </svg>
+  );
+}
+
+
+const ICONS = {
+
+  brand:
+    <path d="M6 5h12v14H6z M9 8h6M9 12h6M9 16h4" />,
+
+  search:
+    <>
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-4-4" />
+    </>,
+
+  bell:
+    <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" />,
+
+  gear:
+    <>
+      <circle cx="12" cy="12" r="3.2" />
+      <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88M4.6 9a1.7 1.7 0 0 0-.34-1.88" />
+    </>,
+
+  match:
+    <path d="M12 3v18M3 12h18" />
+};
+
+
+function Logo({ onClick }) {
+
+  return (
+    <a
+      className="brand"
+      onClick={onClick}
+    >
+      <span
+        className="brand-mark"
+        aria-hidden="true"
+      >
+        <Icon
+          path={ICONS.brand}
+          size={20}
+        />
+      </span>
+
+      <span className="brand-name">
+        Research<span>Link</span>
+      </span>
+    </a>
+  );
+}
+
+
+function Badge({
+  children,
+  tone = "badge-neutral"
+}) {
+
+  return (
+    <span className={`badge ${tone}`}>
+      {children}
+    </span>
+  );
+}
+
+
+function ScoreRing({ percent, sm }) {
+
+  return (
+    <div
+      className={`score${sm ? " sm" : ""}`}
+      style={{
+        background:
+          `conic-gradient(var(--color-primary) 0 ${percent}%, var(--color-border) ${percent}% 100%)`
+      }}
+      aria-label={`${toFaDigits(percent)} درصد تطابق`}
+    >
+      <strong>
+        {toFaDigits(percent)}٪
+      </strong>
+    </div>
+  );
+}
+
+
+function EmptyState({
+  title,
+  body,
+  cta,
+  onClick
+}) {
+
+  return (
+    <div className="empty-state">
+
+      <div className="empty-title">
+        {title}
+      </div>
+
+      <div className="empty-body">
+        {body}
+      </div>
+
+      {cta && (
+        <button
+          className="btn btn-primary"
+          onClick={onClick}
+        >
+          {cta}
+        </button>
+      )}
+
+    </div>
+  );
+}
+
+
+function Chip({
+  label,
+  active,
+  onClick
+}) {
+
+  return (
+    <button
+      type="button"
+      className={`chip${active ? " active" : ""}`}
+      onClick={onClick}
+    >
+      {label}
+    </button>
+  );
+}
+
+
+function Field({
+  label,
+  children
+}) {
+
+  return (
+    <label className="field">
+      <span>{label}</span>
+      {children}
+    </label>
+  );
+}
+
+
+/* =========================================================
+   Shared Header
+   ========================================================= */
+
+function AppHeader({
+  go,
+  role,
+  currentUser,
+  navItems,
+  activePage,
+  logout
+}) {
+
+  return (
+    <header className="topbar">
+
+      <Logo
+        onClick={() =>
+          go(
+            role
+              ? role === "student"
+                ? "studentDashboard"
+                : "professorDashboard"
+              : "landing"
+          )
+        }
+      />
+
+      <nav
+        className="topnav"
+        aria-label="ناوبری اصلی"
+      >
+
+        {navItems.map((item) => (
+
+          <button
+            key={item.page}
+            type="button"
+            className={
+              `navlink${
+                activePage === item.page
+                  ? " active"
+                  : ""
+              }`
+            }
+            onClick={() => go(item.page)}
+          >
+            {item.label}
+          </button>
+
+        ))}
+
+      </nav>
+
+      <div className="header-actions">
+
+        {currentUser && (
+          <span
+            className="avatar"
+            aria-label="پروفایل کاربر"
+          >
+            {currentUser.name
+              ? currentUser.name[0]
+              : "?"}
+          </span>
+        )}
+
+        {role && (
+          <button
+            className="btn btn-outline btn-sm"
+            onClick={logout}
+          >
+            خروج
+          </button>
+        )}
+
+      </div>
+
+    </header>
+  );
+}
+
+
+/* =========================================================
+   Landing
+   ========================================================= */
+
+function Landing({ go }) {
+
+  /* ---------- Real Persian Calendar State ---------- */
+
+  const [now, setNow] =
+    useState(() => new Date());
+
+
+  const [calendarDate, setCalendarDate] =
+    useState(() =>
+      startOfPersianMonth(new Date())
+    );
+
+
+  const [selectedDate, setSelectedDate] =
+    useState(null);
+
+
+  /*
+    اگر کاربر خودش ماه را تغییر نداده باشد،
+    تقویم همیشه روی ماه جاری باقی می‌ماند.
+  */
+  const [followToday, setFollowToday] =
+    useState(true);
+
+
+  /*
+    هر یک دقیقه تاریخ سیستم بررسی می‌شود.
+    بنابراین اگر صفحه باز بماند،
+    روز فعلی هم به‌روزرسانی می‌شود.
+  */
+  useEffect(() => {
+
+    const timer = setInterval(() => {
+
+      const current = new Date();
+
+      setNow(current);
+
+      if (followToday) {
+
+        setCalendarDate(
+          startOfPersianMonth(current)
+        );
+
+      }
+
+    }, 60000);
+
+
+    return () => clearInterval(timer);
+
+  }, [followToday]);
+
+
+  const today =
+    getPersianDateParts(now);
+
+
+  const view =
+    getPersianDateParts(calendarDate);
+
+
+  const calendarDays =
+    buildPersianCalendar(calendarDate);
+
+
+  function changeMonth(direction) {
+
+    setFollowToday(false);
+
+    const probe =
+      new Date(calendarDate);
+
+
+    if (direction === 1) {
+
+      /*
+        به اندازه کافی جلو می‌رویم تا
+        حتماً وارد ماه بعد شده باشیم.
+      */
+      probe.setDate(
+        probe.getDate() + 35
+      );
+
+    } else {
+
+      /*
+        یک روز عقب می‌رویم و سپس
+        روز اول ماه قبل را پیدا می‌کنیم.
+      */
+      probe.setDate(
+        probe.getDate() - 1
+      );
+
+    }
+
+
+    setCalendarDate(
+      startOfPersianMonth(probe)
+    );
+
+    setSelectedDate(null);
+  }
+
+
+  return (
+
+    <div>
+
+      {/* =================================================
+          HEADER
+          ================================================= */}
+
+      <header className="topbar">
+
+        <Logo
+          onClick={() => go("landing")}
+        />
+
+        <nav
+          className="topnav"
+          aria-label="ناوبری اصلی"
+        >
+
+          <a
+            className="active"
+            href="#top"
+          >
+            خانه
+          </a>
+
+          <a href="#professors">
+            اساتید
+          </a>
+
+          <a href="#opportunities">
+            فرصت‌های پژوهشی
+          </a>
+
+          <a href="#events">
+            رویدادها
+          </a>
+
+          <a href="#faq">
+            راهنما
+          </a>
+
+        </nav>
+
+
+        <div className="header-actions">
+
+          <label
+            className="search"
+            aria-label="جستجو"
+          >
+
+            <Icon
+              path={ICONS.search}
+              size={17}
+            />
+
+            <input
+              type="search"
+              placeholder="جستجوی پژوهش، استاد..."
+            />
+
+          </label>
+
+
+          <button
+            className="btn btn-outline btn-sm"
+            onClick={() =>
+              go("auth", {
+                role: "student"
+              })
+            }
+          >
+            ورود
+          </button>
+
+
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={() =>
+              go("auth", {
+                role: "student"
+              })
+            }
+          >
+            ثبت‌نام
+          </button>
+
+        </div>
+
+      </header>
+
+
+      <main id="top">
+
+        {/* =================================================
+            PAGE INTRO
+            ================================================= */}
+
+        <div className="page-intro">
+
+          <div>
+
+            <div className="eyebrow">
+              Research &amp; Collaboration Platform
+            </div>
+
+            <h1 className="page-title">
+              شبکه پژوهش دانشگاه علوم پزشکی قم
+            </h1>
+
+            <p className="page-subtitle">
+              ResearchLink بررسی فرصت‌های پژوهشی در محیطی قابل اعتماد
+            </p>
+
+          </div>
+
+
+          <a
+            className="btn btn-primary"
+            href="#opportunities"
+          >
+            مشاهده فرصت‌های پژوهشی
+          </a>
+
+        </div>
+
+
+        {/* =================================================
+            HERO
+            ================================================= */}
+
+        <section
+          className="hero"
+          aria-label="معرفی ResearchLink"
+        >
+
+          <div className="hero-copy">
+
+            <div className="hero-badge">
+              برای جامعه پژوهشی دانشگاه
+            </div>
+
+            <h1>
+              پژوهش درست<br />
+              <span>تیم درست</span>
+            </h1>
+
+            <p>
+              بستری هوشمند برای حوزه‌های پژوهشی،
+              پایان نامه و طرح های فناورانه
+            </p>
+
+
+            <div className="hero-actions">
+
+              <button
+                className="btn btn-primary"
+                onClick={() =>
+                  go("auth", {
+                    role: "student"
+                  })
+                }
+              >
+                شروع کنید
+              </button>
+
+              <a
+                className="btn btn-outline"
+                href="#professors"
+              >
+                مشاهده اساتید
+              </a>
+
+              <a
+                className="btn btn-pink"
+                href="#opportunities"
+              >
+                فرصت‌های پژوهشی
+              </a>
+
+            </div>
+
+
+            <div className="hero-meta">
+
+              <span className="meta-pill">
+                پروفایل پژوهشی
+              </span>
+
+              <span className="meta-pill">
+                Matching هوشمند
+              </span>
+
+              <span className="meta-pill">
+                همکاری تیمی
+              </span>
+
+            </div>
+
+          </div>
+
+
+          <div className="hero-visual">
+
+            <img
+              src="./download (2).jpg"
+              alt=""
+            />
+
+          </div>
+
+        </section>
+
+
+        {/* =================================================
+            STATS
+            ================================================= */}
+
+        <section
+          className="stats-grid"
+          aria-label="آمار پژوهشی"
+        >
+
+          <article className="stat-card">
+
+            <div className="stat-top">
+              <span className="stat-label">
+                مقالات منتشرشده
+              </span>
+
+              <span className="stat-icon">
+                <Icon path={ICONS.brand} />
+              </span>
+            </div>
+
+            <div className="stat-number">
+              ۱۰۰+
+            </div>
+
+            <div className="stat-note">
+              فعالیت پژوهشی ثبت‌شده
+            </div>
+
+          </article>
+
+
+          <article className="stat-card">
+
+            <div className="stat-top">
+              <span className="stat-label">
+                استاد فعال
+              </span>
+
+              <span className="stat-icon">
+                <Icon
+                  path={
+                    <circle
+                      cx="12"
+                      cy="8"
+                      r="3"
+                    />
+                  }
+                />
+              </span>
+            </div>
+
+            <div className="stat-number">
+              {toFaDigits(seedProfessors.length)}
+            </div>
+
+            <div className="stat-note">
+              پروفایل پژوهشی فعال
+            </div>
+
+          </article>
+
+
+          <article className="stat-card">
+
+            <div className="stat-top">
+              <span className="stat-label">
+                دانشجوی عضو
+              </span>
+
+              <span className="stat-icon">
+                <Icon
+                  path={
+                    <path d="m3 10 9-5 9 5-9 5-9-5Z" />
+                  }
+                />
+              </span>
+            </div>
+
+            <div className="stat-number">
+              ۵۰+
+            </div>
+
+            <div className="stat-note">
+              در مسیر همکاری پژوهشی
+            </div>
+
+          </article>
+
+
+          <article className="stat-card">
+
+            <div className="stat-top">
+              <span className="stat-label">
+                طرح پژوهشی جاری
+              </span>
+
+              <span className="stat-icon">
+                <Icon
+                  path={
+                    <path d="M6 4h12v16H6z" />
+                  }
+                />
+              </span>
+            </div>
+
+            <div className="stat-number">
+              {toFaDigits(seedProjects.length)}
+            </div>
+
+            <div className="stat-note">
+              فرصت برای مشارکت
+            </div>
+
+          </article>
+
+
+          <article className="stat-card">
+
+            <div className="stat-top">
+              <span className="stat-label">
+                همکاری صنعتی
+              </span>
+
+              <span className="stat-icon">
+                <Icon
+                  path={
+                    <path d="M4 19V9h6v10M14 19V5h6v14M2 19h20" />
+                  }
+                />
+              </span>
+            </div>
+
+            <div className="stat-number">
+              ۱۰
+            </div>
+
+            <div className="stat-note">
+              پروژه و ارتباط سازمانی
+            </div>
+
+          </article>
+
+
+          <article className="stat-card">
+
+            <div className="stat-top">
+              <span className="stat-label">
+                پتنت ثبت‌شده
+              </span>
+
+              <span className="stat-icon">
+                <Icon
+                  path={
+                    <path d="M6 3h12v18H6z" />
+                  }
+                />
+              </span>
+            </div>
+
+            <div className="stat-number">
+              ۱۰
+            </div>
+
+            <div className="stat-note">
+              خروجی فناورانه
+            </div>
+
+          </article>
+
+        </section>
+
+
+        {/* =================================================
+            CONTENT
+            ================================================= */}
+
+        <div className="content-grid">
+
+          {/* =================================================
+              LEFT COLUMN
+              ================================================= */}
+
+          <div className="left-column">
+
+            {/* WHY RESEARCHLINK */}
+
+            <section
+              className="panel"
+              id="opportunities"
+            >
+
+              <div className="panel-head">
+
+                <div>
+
+                  <div className="panel-title">
+                    چرا ResearchLink؟
+                  </div>
+
+                  <div className="panel-caption">
+                    ساختار ساده برای همکاری پژوهشی مؤثر
+                  </div>
+
+                </div>
+
+                <span className="tag">
+                  Academic SaaS
+                </span>
+
+              </div>
+
+
+              <div className="panel-body">
+
+                <div className="feature-grid">
+
+                  <article className="feature-card">
+
+                    <div className="feature-icon">
+                      <Icon path={ICONS.search} />
+                    </div>
+
+                    <h3>
+                      کشف فرصت‌های پژوهشی
+                    </h3>
+
+                    <p>
+                      پروژه‌ها و فرصت‌های مرتبط را بر اساس حوزه علاقه،
+                      مهارت و سطح تحصیلی راحت‌تر پیدا کنید.
+                    </p>
+
+                  </article>
+
+
+                  <article className="feature-card">
+
+                    <div className="feature-icon">
+                      <Icon path={ICONS.match} />
+                    </div>
+
+                    <h3>
+                      Matching توضیح‌پذیر
+                    </h3>
+
+                    <p>
+                      امتیاز تطابق فقط یک عدد نیست؛ ResearchLink
+                      دلیل مناسب‌بودن هر پیشنهاد را هم نمایش می‌دهد.
+                    </p>
+
+                  </article>
+
+
+                  <article className="feature-card">
+
+                    <div className="feature-icon">
+
+                      <Icon
+                        path={
+                          <>
+                            <circle
+                              cx="8"
+                              cy="8"
+                              r="3"
+                            />
+
+                            <circle
+                              cx="17"
+                              cy="9"
+                              r="3"
+                            />
+                          </>
+                        }
+                      />
+
+                    </div>
+
+                    <h3>
+                      شروع همکاری
+                    </h3>
+
+                    <p>
+                      پس از پیدا کردن Match مناسب، ارتباط،
+                      درخواست همکاری و تشکیل تیم در یک مسیر منظم دنبال می‌شود.
+                    </p>
+
+                  </article>
+
+                </div>
+
+              </div>
+
+            </section>
+
+
+            {/* PROFESSORS */}
+
+            <section
+              className="panel"
+              id="professors"
+            >
+
+              <div className="panel-head">
+
+                <div>
+
+                  <div className="panel-title">
+                    اساتید برجسته
+                  </div>
+
+                  <div className="panel-caption">
+                    پروفایل‌های پژوهشی منتخب
+                  </div>
+
+                </div>
+
+                <a
+                  className="btn btn-soft btn-sm"
+                  href="#contact"
+                >
+                  همکاری با استاد
+                </a>
+
+              </div>
+
+
+              <div className="panel-body">
+
+                <div className="prof-list">
+
+                  {seedProfessors.map((p) => (
+
+                    <article
+                      key={p.id}
+                      className="prof-card"
+                      onClick={() =>
+                        go("auth", {
+                          role: "student"
+                        })
+                      }
+                    >
+
+                      <div className="prof-avatar">
+                        {p.name[4]}
+                      </div>
+
+                      <div>
+
+                        <div className="prof-name">
+                          {p.name}
+                        </div>
+
+                        <div className="prof-meta">
+                          {p.department} · {p.meta}
+                        </div>
+
+                      </div>
+
+                      <span className="tag tag-pink">
+                        پژوهش
+                      </span>
+
+                    </article>
+
+                  ))}
+
+                </div>
+
+              </div>
+
+            </section>
+
+
+            {/* MATCHING */}
+
+            <section className="panel">
+
+              <div className="panel-head">
+
+                <div>
+
+                  <div className="panel-title">
+                    نمونه تطابق هوشمند
+                  </div>
+
+                  <div className="panel-caption">
+                    چرا این پروژه برای شما مناسب است؟
+                  </div>
+
+                </div>
+
+                <span className="tag tag-pink">
+                  Match Score
+                </span>
+
+              </div>
+
+
+              <div className="match-card">
+
+                <div className="match-head">
+
+                  <div>
+
+                    <div className="match-title">
+                      تشخیص مبتنی بر هوش مصنوعی سرطان
+                    </div>
+
+                    <div className="match-subtitle">
+                      دکتر رضا کمالی · هوش مصنوعی در پزشکی
+                    </div>
+
+                  </div>
+
+                  <ScoreRing percent={94} />
+
+                </div>
+
+
+                <div className="reason-list">
+
+                  {[
+                    "تناسب پروفایل پژوهشی",
+                    "تناسب با علایق شما",
+                    "تناسب مهارت‌ها",
+                    "سطح تحصیلی"
+                  ].map((r) => (
+
+                    <div
+                      key={r}
+                      className="reason ok"
+                    >
+
+                      <span className="reason-dot">
+                        ✓
+                      </span>
+
+                      {r}
+
+                    </div>
+
+                  ))}
+
+                </div>
+
+
+                <div className="hero-actions">
+
+                  <button
+                    className="btn btn-primary"
+                    onClick={() =>
+                      go("auth", {
+                        role: "student"
+                      })
+                    }
+                  >
+                    مشاهده جزئیات Match
+                  </button>
+
+                </div>
+
+              </div>
+
+            </section>
+
+
+            {/* CONTACT */}
+
+            <section
+              className="panel"
+              id="contact"
+            >
+
+              <div className="panel-head">
+
+                <div>
+
+                  <div className="panel-title">
+                    تماس با ResearchLink
+                  </div>
+
+                  <div className="panel-caption">
+                    پیشنهاد، همکاری یا پرسش خود را ارسال کنید
+                  </div>
+
+                </div>
+
+              </div>
+
+
+              <div className="panel-body">
+
+                <form
+                  className="contact-form"
+                  onSubmit={(e) => {
+
+                    e.preventDefault();
+
+                    alert(
+                      "پیام شما با موفقیت ثبت شد. کارشناسان ResearchLink به‌زودی پاسخ خواهند داد."
+                    );
+
+                    e.target.reset();
+
+                  }}
+                >
+
+                  <div className="field">
+
+                    <label>
+                      نام و نام خانوادگی
+                    </label>
+
+                    <input
+                      type="text"
+                      required
+                      placeholder="مثال: احمد رضایی"
+                    />
+
+                  </div>
+
+
+                  <div className="field">
+
+                    <label>
+                      ایمیل
+                    </label>
+
+                    <input
+                      type="email"
+                      required
+                      placeholder="example@muq.ac.ir"
+                    />
+
+                  </div>
+
+
+                  <div className="field full">
+
+                    <label>
+                      موضوع
+                    </label>
+
+                    <select>
+
+                      <option>
+                        انتخاب کنید...
+                      </option>
+
+                      <option>
+                        همکاری پژوهشی
+                      </option>
+
+                      <option>
+                        ثبت‌نام در رویداد
+                      </option>
+
+                      <option>
+                        پیشنهاد
+                      </option>
+
+                      <option>
+                        سوال عمومی
+                      </option>
+
+                    </select>
+
+                  </div>
+
+
+                  <div className="field full">
+
+                    <label>
+                      پیام
+                    </label>
+
+                    <textarea
+                      required
+                      placeholder="متن پیام خود را بنویسید..."
+                    ></textarea>
+
+                  </div>
+
+
+                  <div className="form-actions">
+
+                    <button
+                      type="submit"
+                      className="btn btn-primary"
+                    >
+                      ارسال پیام
+                    </button>
+
+                    <button
+                      type="reset"
+                      className="btn btn-outline"
+                    >
+                      پاک کردن
+                    </button>
+
+                  </div>
+
+                </form>
+
+              </div>
+
+            </section>
+
+          </div>
+
+
+          {/* =================================================
+              RIGHT COLUMN
+              ================================================= */}
+
+          <aside className="right-column">
+
+            {/* =================================================
+                REAL PERSIAN CALENDAR
+                ================================================= */}
+
+            <section className="panel">
+
+              <div className="panel-head">
+
+                <div className="panel-title">
+                  تقویم پژوهشی
+                </div>
+
+
+                <div className="calendar-actions">
+
+                  <button
+                    className="calendar-btn"
+                    type="button"
+                    aria-label="ماه قبل"
+                    onClick={() =>
+                      changeMonth(-1)
+                    }
+                  >
+                    ‹
+                  </button>
+
+
+                  <button
+                    className="calendar-btn"
+                    type="button"
+                    aria-label="ماه بعد"
+                    onClick={() =>
+                      changeMonth(1)
+                    }
+                  >
+                    ›
+                  </button>
+
+                </div>
+
+              </div>
+
+
+              <div className="panel-body">
+
+                <div className="calendar">
+
+                  <div className="calendar-head">
+
+                    <div className="calendar-title">
+
+                      {PERSIAN_MONTHS[view.month - 1]}
+                      {" "}
+                      {toFaDigits(view.year)}
+
+                    </div>
+
+                    <span className="tag">
+                      پژوهش
+                    </span>
+
+                  </div>
+
+
+                  <div className="calendar-grid">
+
+                    {/* روزهای هفته */}
+
+                    <span className="head">
+                      ش
+                    </span>
+
+                    <span className="head">
+                      ی
+                    </span>
+
+                    <span className="head">
+                      د
+                    </span>
+
+                    <span className="head">
+                      س
+                    </span>
+
+                    <span className="head">
+                      چ
+                    </span>
+
+                    <span className="head">
+                      پ
+                    </span>
+
+                    <span className="head">
+                      ج
+                    </span>
+
+
+                    {/* روزهای واقعی ماه */}
+
+                    {calendarDays.map(
+                      (item, index) => {
+
+                        /*
+                          خانه خالی
+                        */
+
+                        if (!item) {
+
+                          return (
+                            <span
+                              key={`empty-${index}`}
+                              className="empty"
+                              aria-hidden="true"
+                            ></span>
+                          );
+
+                        }
+
+
+                        /*
+                          آیا امروز است؟
+                        */
+
+                        const isToday =
+                          item.year === today.year &&
+                          item.month === today.month &&
+                          item.day === today.day;
+
+
+                        /*
+                          کلید یکتا برای انتخاب روز
+                        */
+
+                        const dateKey =
+                          `${item.year}-${item.month}-${item.day}`;
+
+
+                        const isSelected =
+                          selectedDate === dateKey;
+
+
+                        return (
+
+                          <button
+                            key={dateKey}
+                            type="button"
+                            className={
+                              `day${
+                                isToday
+                                  ? " today"
+                                  : ""
+                              }${
+                                isSelected
+                                  ? " active"
+                                  : ""
+                              }`
+                            }
+                            onClick={() =>
+                              setSelectedDate(
+                                dateKey
+                              )
+                            }
+                            aria-label={
+                              `${toFaDigits(item.day)} ` +
+                              `${PERSIAN_MONTHS[item.month - 1]} ` +
+                              `${toFaDigits(item.year)}`
+                            }
+                          >
+
+                            {toFaDigits(item.day)}
+
+                          </button>
+
+                        );
+
+                      }
+                    )}
+
+                  </div>
+
+                </div>
+
+              </div>
+
+            </section>
+
+
+            {/* =================================================
+                EVENTS
+                ================================================= */}
+
+            <section
+              className="panel"
+              id="events"
+            >
+
+              <div className="panel-head">
+
+                <div>
+
+                  <div className="panel-title">
+                    رویدادهای پیش‌رو
+                  </div>
+
+                  <div className="panel-caption">
+                    پنج رویداد منتخب
+                  </div>
+
+                </div>
+
+                <a
+                  className="btn btn-soft btn-sm"
+                  href="#"
+                >
+                  همه
+                </a>
+
+              </div>
+
+
+              <div className="panel-body">
+
+                <div className="event-list">
+
+                  <article className="event">
+
+                    <div className="event-top">
+
+                      <span className="event-date">
+                        ۲۵ شهریور
+                      </span>
+
+                      <span className="event-time">
+                        ۱۰:۰۰ تا ۱۲:۰۰
+                      </span>
+
+                    </div>
+
+                    <div className="event-title">
+                      همایش سالانه پژوهش‌های نوین در سلامت
+                    </div>
+
+                    <div className="event-meta">
+                      ثبت‌نام برای دانشجویان و اساتید
+                    </div>
+
+                  </article>
+
+
+                  <article className="event">
+
+                    <div className="event-top">
+
+                      <span className="event-date">
+                        ۵ مهر
+                      </span>
+
+                      <span className="event-time">
+                        ۱۴:۰۰ تا ۱۶:۰۰
+                      </span>
+
+                    </div>
+
+                    <div className="event-title">
+                      کارگاه نگارش مقاله علمی با هوش مصنوعی
+                    </div>
+
+                    <div className="event-meta">
+                      کارگاه آموزشی
+                    </div>
+
+                  </article>
+
+
+                  <article className="event">
+
+                    <div className="event-top">
+
+                      <span className="event-date">
+                        ۱۸ مهر
+                      </span>
+
+                      <span className="event-time">
+                        ۹:۰۰ تا ۱۳:۰۰
+                      </span>
+
+                    </div>
+
+                    <div className="event-title">
+                      مسابقه ایده‌های فناورانه سلامت
+                    </div>
+
+                    <div className="event-meta">
+                      فناوری و نوآوری
+                    </div>
+
+                  </article>
+
+
+                  <article className="event">
+
+                    <div className="event-top">
+
+                      <span className="event-date">
+                        ۲ آبان
+                      </span>
+
+                      <span className="event-time">
+                        ۱۶:۰۰ تا ۱۸:۰۰
+                      </span>
+
+                    </div>
+
+                    <div className="event-title">
+                      نشست اساتید و دانشجویان نخبه
+                    </div>
+
+                    <div className="event-meta">
+                      شبکه‌سازی پژوهشی
+                    </div>
+
+                  </article>
+
+
+                  <article className="event">
+
+                    <div className="event-top">
+
+                      <span className="event-date">
+                        ۱۵ آبان
+                      </span>
+
+                      <span className="event-time">
+                        آنلاین
+                      </span>
+
+                    </div>
+
+                    <div className="event-title">
+                      وبینار بین‌المللی بیوانفورماتیک
+                    </div>
+
+                    <div className="event-meta">
+                      ثبت‌نام آزاد
+                    </div>
+
+                  </article>
+
+                </div>
+
+              </div>
+
+            </section>
+
+
+            {/* =================================================
+                RECENT ACTIVITY
+                ================================================= */}
+
+            <section className="panel">
+
+              <div className="panel-head">
+
+                <div className="panel-title">
+                  فعالیت اخیر
+                </div>
+
+                <span className="tag tag-pink">
+                  Live
+                </span>
+
+              </div>
+
+
+              <div className="panel-body">
+
+                <div className="activity-list">
+
+                  <div className="activity">
+
+                    <span className="activity-icon">
+
+                      <Icon
+                        path={
+                          <path d="M12 3v18M3 12h18" />
+                        }
+                        size={15}
+                      />
+
+                    </span>
+
+                    <div>
+
+                      <p>
+                        پروژه جدید در حوزه هوش مصنوعی سلامت اضافه شد.
+                      </p>
+
+                      <small>
+                        امروز · ۰۹:۱۵
+                      </small>
+
+                    </div>
+
+                  </div>
+
+
+                  <div className="activity">
+
+                    <span className="activity-icon">
+
+                      <Icon
+                        path={
+                          <path d="M20 6 9 17l-5-5" />
+                        }
+                        size={15}
+                      />
+
+                    </span>
+
+                    <div>
+
+                      <p>
+                        درخواست همکاری یک دانشجو برای بررسی استاد ثبت شد.
+                      </p>
+
+                      <small>
+                        امروز · ۱۱:۳۰
+                      </small>
+
+                    </div>
+
+                  </div>
+
+
+                  <div className="activity">
+
+                    <span className="activity-icon">
+
+                      <Icon
+                        path={
+                          <>
+                            <circle
+                              cx="12"
+                              cy="12"
+                              r="8"
+                            />
+
+                            <path d="M12 8v5l3 2" />
+                          </>
+                        }
+                        size={15}
+                      />
+
+                    </span>
+
+                    <div>
+
+                      <p>
+                        مهلت ثبت‌نام کارگاه نگارش مقاله به‌روزرسانی شد.
+                      </p>
+
+                      <small>
+                        دیروز · ۱۵:۴۵
+                      </small>
+
+                    </div>
+
+                  </div>
+
+                </div>
+
+              </div>
+
+            </section>
+
+
+            {/* =================================================
+                FAQ
+                ================================================= */}
+
+            <section
+              className="panel"
+              id="faq"
+            >
+
+              <div className="panel-head">
+
+                <div>
+
+                  <div className="panel-title">
+                    سوالات متداول
+                  </div>
+
+                  <div className="panel-caption">
+                    راهنمای سریع
+                  </div>
+
+                </div>
+
+              </div>
+
+
+              <div className="panel-body">
+
+                <div className="faq">
+
+                  <details open>
+
+                    <summary>
+                      چگونه می‌توانم استاد راهنما پیدا کنم؟
+                    </summary>
+
+                    <p>
+                      از بخش اساتید، زمینه پژوهشی و فرصت‌های هر استاد را ببینید و درخواست همکاری ارسال کنید.
+                    </p>
+
+                  </details>
+
+
+                  <details>
+
+                    <summary>
+                      آیا امکان هم‌نویسندگی مقاله وجود دارد؟
+                    </summary>
+
+                    <p>
+                      بله، ResearchLink برای پیدا کردن همکار پژوهشی و هم‌نویسنده بر اساس حوزه تخصصی طراحی شده است.
+                    </p>
+
+                  </details>
+
+
+                  <details>
+
+                    <summary>
+                      چه منابعی برای دانشجویان وجود دارد؟
+                    </summary>
+
+                    <p>
+                      پروفایل پژوهشی، فرصت‌های پروژه، رویدادها و مسیر ارتباط با اساتید در یک محیط منظم ارائه می‌شود.
+                    </p>
+
+                  </details>
+
+
+                  <details>
+
+                    <summary>
+                      چگونه در رویدادها ثبت‌نام کنم؟
+                    </summary>
+
+                    <p>
+                      پس از ورود به پنل کاربری، رویداد موردنظر را انتخاب کرده و مراحل ثبت‌نام را دنبال کنید.
+                    </p>
+
+                  </details>
+
+                </div>
+
+              </div>
+
+            </section>
+
+          </aside>
+
+        </div>
+
+
+        {/* =================================================
+            CTA
+            ================================================= */}
+
+        <section className="cta">
+
+          <div>
+
+            <h2>
+              به شبکه پژوهشگران بپیوندید
+            </h2>
+
+            <p>
+              پروفایل پژوهشی خود را بسازید،
+              فرصت‌های مناسب را پیدا کنید و همکاری‌های پژوهشی
+              را از یک نقطه مدیریت کنید.
+            </p>
+
+          </div>
+
+
+          <button
+            className="btn btn-pink"
+            onClick={() =>
+              go("auth", {
+                role: "student"
+              })
+            }
+          >
+            ثبت‌نام سریع
+          </button>
+
+        </section>
+
+      </main>
+
+
+      {/* =================================================
+          FOOTER
+          ================================================= */}
+
+      <footer>
+
+        <div className="footer-grid">
+
+          <div>
+
+            <div className="footer-title">
+              ResearchLink
+            </div>
+
+            <p className="footer-text">
+              شبکه همکاری پژوهشی دانشگاه علوم پزشکی قم؛
+              با تمرکز بر کشف فرصت، تطبیق هوشمند و همکاری.
+            </p>
+
+          </div>
+
+
+          <div>
+
+            <div className="footer-title">
+              دسترسی سریع
+            </div>
+
+            <ul className="footer-links">
+
+              <li>
+                <a href="#professors">
+                  اساتید
+                </a>
+              </li>
+
+              <li>
+                <a href="#opportunities">
+                  فرصت‌ها
+                </a>
+              </li>
+
+              <li>
+                <a href="#events">
+                  رویدادها
+                </a>
+              </li>
+
+            </ul>
+
+          </div>
+
+
+          <div>
+
+            <div className="footer-title">
+              پشتیبانی
+            </div>
+
+            <ul className="footer-links">
+
+              <li>
+                <a href="#faq">
+                  راهنما
+                </a>
+              </li>
+
+              <li>
+                <a href="#contact">
+                  تماس با ما
+                </a>
+              </li>
+
+              <li>
+                <a href="#">
+                  حریم خصوصی
+                </a>
+              </li>
+
+            </ul>
+
+          </div>
+
+
+          <div>
+
+            <div className="footer-title">
+              جامعه
+            </div>
+
+            <ul className="footer-links">
+
+              <li>
+                <a href="#">
+                  لینکدین
+                </a>
+              </li>
+
+              <li>
+                <a href="#">
+                  اینستاگرام
+                </a>
+              </li>
+
+              <li>
+                <a href="#">
+                  تلگرام
+                </a>
+              </li>
+
+            </ul>
+
+          </div>
+
+        </div>
+
+
+        <div className="footer-bottom">
+
+          <span>
+            © ۱۴۰۵ ResearchLink · تمامی حقوق محفوظ است
+          </span>
+
+          <span>
+            دانشگاه علوم پزشکی قم
+          </span>
+
+        </div>
+
+      </footer>
+
+    </div>
+
+  );
+}
+
+
+/* =========================================================
+   Auth
+   ========================================================= */
+
+function AuthScreen({
+  go,
+  initialRole,
+  onLogin,
+  students,
+  professors,
+  onCreateStudent
+}) {
+
+  const [pickedRole, setPickedRole] =
+    useState(initialRole || "student");
+
+  const [mode, setMode] =
+    useState("signup");
+
+
+  return (
+
+    <div>
+
+      <header className="topbar">
+
+        <Logo
+          onClick={() => go("landing")}
+        />
+
+        <nav className="topnav"></nav>
+
+        <div className="header-actions"></div>
+
+      </header>
+
+
+      <main>
+
+        <div className="auth-wrap">
+
+          <div className="panel">
+
+            <div className="panel-body">
+
+              <div className="mode-toggle">
+
+                <button
+                  className={
+                    mode === "signup"
+                      ? "active"
+                      : ""
+                  }
+                  onClick={() =>
+                    setMode("signup")
+                  }
+                >
+                  ثبت‌نام
+                </button>
+
+                <button
+                  className={
+                    mode === "login"
+                      ? "active"
+                      : ""
+                  }
+                  onClick={() =>
+                    setMode("login")
+                  }
+                >
+                  ورود
+                </button>
+
+              </div>
+
+
+              <div
+                style={{
+                  fontSize: 13,
+                  fontWeight: 700,
+                  marginBottom: 10,
+                  color: "var(--color-text)"
+                }}
+              >
+                من یک:
+              </div>
+
+
+              <div className="role-toggle">
+
+                {[
+                  "student",
+                  "professor"
+                ].map((r) => (
+
+                  <button
+                    key={r}
+                    className={
+                      pickedRole === r
+                        ? "active"
+                        : ""
+                    }
+                    onClick={() =>
+                      setPickedRole(r)
+                    }
+                  >
+                    {
+                      r === "student"
+                        ? "دانشجو هستم"
+                        : "استاد هستم"
+                    }
+                  </button>
+
+                ))}
+
+              </div>
+
+
+              {mode === "signup" ? (
+
+                pickedRole === "student" ? (
+
+                  <button
+                    className="btn btn-primary"
+                    style={{
+                      width: "100%"
+                    }}
+                    onClick={() =>
+                      go("onboarding")
+                    }
+                  >
+                    ادامه به تنظیم پروفایل
+                  </button>
+
+                ) : (
+
+                  <button
+                    className="btn btn-primary"
+                    style={{
+                      width: "100%"
+                    }}
+                    onClick={() =>
+                      onLogin(
+                        "professor",
+                        professors[0].id
+                      )
+                    }
+                  >
+                    ساخت حساب نمایشی استاد
+                  </button>
+
+                )
+
+              ) : (
+
+                <div className="demo-list">
+
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "var(--color-text-muted)",
+                      marginBottom: 4
+                    }}
+                  >
+                    ورود نمایشی — یک حساب موجود را انتخاب کنید:
+                  </div>
+
+
+                  {
+                    (
+                      pickedRole === "student"
+                        ? students
+                        : professors
+                    ).map((u) => (
+
+                      <button
+                        key={u.id}
+                        className="demo-item"
+                        onClick={() =>
+                          onLogin(
+                            pickedRole,
+                            u.id
+                          )
+                        }
+                      >
+
+                        <div className="demo-name">
+                          {u.name}
+                        </div>
+
+                        <div className="demo-role">
+                          {
+                            pickedRole === "student"
+                              ? u.university
+                              : u.department
+                          }
+                        </div>
+
+                      </button>
+
+                    ))
+                  }
+
+                </div>
+
+              )}
+
+            </div>
+
+          </div>
+
+        </div>
+
+      </main>
+
+    </div>
+
+  );
+}
+
+
+/* =========================================================
+   Student Onboarding
+   ========================================================= */
+
+function Onboarding({
+  go,
+  onCreate
+}) {
+
+  const [form, setForm] =
+    useState({
+      name: "",
+      university: "",
+      major: "",
+      level: LEVELS[0],
+      interests: [],
+      skills: [],
+      availability: HOURS[1],
+      bio: ""
+    });
+
+
+  const toggle = (
+    list,
+    val
+  ) =>
+    list.includes(val)
+      ? list.filter(
+          (x) => x !== val
+        )
+      : [...list, val];
+
+
+  const valid =
+    form.name &&
+    form.university &&
+    form.major;
+
+
+  return (
+
+    <div>
+
+      <header className="topbar">
+
+        <Logo
+          onClick={() =>
+            go("landing")
+          }
+        />
+
+        <nav className="topnav"></nav>
+
+        <div className="header-actions"></div>
+
+      </header>
+
+
+      <main>
+
+        <div
+          style={{
+            maxWidth: 640,
+            margin: "0 auto"
+          }}
+        >
+
+          <div className="page-intro">
+
+            <div>
+
+              <div className="eyebrow">
+                پروفایل پژوهشی
+              </div>
+
+              <h1 className="page-title">
+                تنظیم پروفایل دانشجویی
+              </h1>
+
+              <p className="page-subtitle">
+                این اطلاعات برای محاسبه امتیاز تطابق شما با پروژه‌ها استفاده می‌شود.
+              </p>
+
+            </div>
+
+          </div>
+
+
+          <div className="panel">
+
+            <div className="panel-body">
+
+              <div className="form-grid">
+
+                <Field label="نام و نام خانوادگی">
+
+                  <input
+                    value={form.name}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        name: e.target.value
+                      })
+                    }
+                    placeholder="مثال: زهرا محمدی"
+                  />
+
+                </Field>
+
+
+                <Field label="دانشگاه">
+
+                  <input
+                    value={form.university}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        university: e.target.value
+                      })
+                    }
+                    placeholder="دانشگاه علوم پزشکی قم"
+                  />
+
+                </Field>
+
+
+                <Field label="رشته تحصیلی">
+
+                  <input
+                    value={form.major}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        major: e.target.value
+                      })
+                    }
+                    placeholder="مثال: پزشکی"
+                  />
+
+                </Field>
+
+
+                <Field label="سطح تحصیلی">
+
+                  <select
+                    value={form.level}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        level: e.target.value
+                      })
+                    }
+                  >
+
+                    {
+                      LEVELS.map((l) => (
+
+                        <option key={l}>
+                          {l}
+                        </option>
+
+                      ))
+                    }
+
+                  </select>
+
+                </Field>
+
+
+                <Field label="زمان در دسترس">
+
+                  <select
+                    value={form.availability}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        availability: e.target.value
+                      })
+                    }
+                  >
+
+                    {
+                      HOURS.map((h) => (
+
+                        <option key={h}>
+                          {h}
+                        </option>
+
+                      ))
+                    }
+
+                  </select>
+
+                </Field>
+
+
+                <div className="field full">
+
+                  <label>
+                    علایق پژوهشی
+                  </label>
+
+                  <div className="chip-group">
+
+                    {
+                      FIELDS.map((f) => (
+
+                        <Chip
+                          key={f}
+                          label={f}
+                          active={
+                            form.interests.includes(f)
+                          }
+                          onClick={() =>
+                            setForm({
+                              ...form,
+                              interests:
+                                toggle(
+                                  form.interests,
+                                  f
+                                )
+                            })
+                          }
+                        />
+
+                      ))
+                    }
+
+                  </div>
+
+                </div>
+
+
+                <div className="field full">
+
+                  <label>
+                    مهارت‌ها
+                  </label>
+
+                  <div className="chip-group">
+
+                    {
+                      SKILLS.map((s) => (
+
+                        <Chip
+                          key={s}
+                          label={s}
+                          active={
+                            form.skills.includes(s)
+                          }
+                          onClick={() =>
+                            setForm({
+                              ...form,
+                              skills:
+                                toggle(
+                                  form.skills,
+                                  s
+                                )
+                            })
+                          }
+                        />
+
+                      ))
+                    }
+
+                  </div>
+
+                </div>
+
+
+                <div className="field full">
+
+                  <label>
+                    معرفی کوتاه
+                  </label>
+
+                  <textarea
+                    value={form.bio}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        bio: e.target.value
+                      })
+                    }
+                    placeholder="در چند جمله خودتان را معرفی کنید..."
+                  ></textarea>
+
+                </div>
+
+              </div>
+
+
+              <div
+                className="form-actions"
+                style={{
+                  marginTop: 14
+                }}
+              >
+
+                <button
+                  className="btn btn-primary"
+                  disabled={!valid}
+                  onClick={() =>
+                    valid && onCreate(form)
+                  }
+                >
+                  ساخت پروفایل و ورود
+                </button>
+
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+
+      </main>
+
+    </div>
+
+  );
+}
+
+
+/* =========================================================
+   Student Dashboard
+   ========================================================= */
+
+function StudentDashboard({
+  go,
+  header,
+  student,
+  projects,
+  professors
+}) {
+
+  const [fieldFilter, setFieldFilter] =
+    useState(null);
+
+
+  const list =
+    projects
+      .filter(
+        (p) =>
+          !fieldFilter ||
+          p.field === fieldFilter
+      )
+      .map((p) => ({
+        p,
+        match:
+          matchStudentToProject(
+            student,
+            p
+          )
+      }))
+      .sort(
+        (a, b) =>
+          b.match.percent -
+          a.match.percent
+      );
+
+
+  return (
+
+    <div>
+
+      {header}
+
+      <main>
+
+        <div className="page-intro">
+
+          <div>
+
+            <div className="eyebrow">
+              خوش آمدید، {student.name}
+            </div>
+
+            <h1 className="page-title">
+              پروژه‌های پژوهشی
+            </h1>
+
+            <p className="page-subtitle">
+              پروژه‌ها بر اساس بیشترین امتیاز تطابق با پروفایل شما مرتب شده‌اند.
+            </p>
+
+          </div>
+
+        </div>
+
+
+        <div className="filter-bar">
+
+          <Chip
+            label="همه حوزه‌ها"
+            active={!fieldFilter}
+            onClick={() =>
+              setFieldFilter(null)
+            }
+          />
+
+          {
+            FIELDS.map((f) => (
+
+              <Chip
+                key={f}
+                label={f}
+                active={
+                  fieldFilter === f
+                }
+                onClick={() =>
+                  setFieldFilter(f)
+                }
+              />
+
+            ))
+          }
+
+        </div>
+
+
+        <div className="project-list">
+
+          {
+            list.map(
+              ({
+                p,
+                match
+              }) => {
+
+                const prof =
+                  professors.find(
+                    (x) =>
+                      x.id ===
+                      p.professorId
+                  );
+
+
+                return (
+
+                  <article
+                    key={p.id}
+                    className="project-card"
+                    onClick={() =>
+                      go(
+                        "projectDetails",
+                        {
+                          projectId:
+                            p.id
+                        }
+                      )
+                    }
+                  >
+
+                    <div className="pc-top">
+
+                      <div>
+
+                        <div className="pc-title">
+                          {p.title}
+                        </div>
+
+                        <div className="pc-meta">
+                          {prof?.name} · {p.field}
+                        </div>
+
+                        <div className="pc-tags">
+
+                          <Badge tone="badge-cyan">
+                            {p.type}
+                          </Badge>
+
+                          <Badge tone="badge-neutral">
+                            {p.time}
+                          </Badge>
+
+                          <Badge tone="badge-neutral">
+                            {p.duration}
+                          </Badge>
+
+                        </div>
+
+                      </div>
+
+
+                      <ScoreRing
+                        percent={
+                          match.percent
+                        }
+                        sm
+                      />
+
+                    </div>
+
+                  </article>
+
+                );
+
+              }
+            )
+          }
+
+
+          {!list.length && (
+
+            <EmptyState
+              title="پروژه‌ای یافت نشد"
+              body="فیلتر حوزه پژوهشی را تغییر دهید."
+            />
+
+          )}
+
+        </div>
+
+      </main>
+
+    </div>
+
+  );
+}
+
+
+/* =========================================================
+   Project Details
+   ========================================================= */
+
+function ProjectDetails({
+  go,
+  header,
+  projectId,
+  projects,
+  professors,
+  student,
+  applications,
+  onApply
+}) {
+
+  const [message, setMessage] =
+    useState("");
+
+
+  const project =
+    projects.find(
+      (p) =>
+        p.id === projectId
+    );
+
+
+  const prof =
+    professors.find(
+      (p) =>
+        p.id ===
+        project?.professorId
+    );
+
+
+  const match =
+    student
+      ? matchStudentToProject(
+          student,
+          project
+        )
+      : null;
+
+
+  const already =
+    student &&
+    applications.some(
+      (a) =>
+        a.projectId === projectId &&
+        a.studentId === student.id
+    );
+
+
+  if (!project) {
+    return null;
+  }
+
+
+  return (
+
+    <div>
+
+      {header}
+
+
+      <main>
+
+        <div
+          className="back-link"
+          onClick={() =>
+            go("studentDashboard")
+          }
+        >
+          → بازگشت به فهرست پروژه‌ها
+        </div>
+
+
+        <div className="content-grid">
+
+          <div className="left-column">
+
+            <section className="panel">
+
+              <div className="panel-head">
+
+                <div>
+
+                  <div className="panel-title">
+                    {project.title}
+                  </div>
+
+                  <div className="panel-caption">
+                    {prof?.name} · {project.field}
+                  </div>
+
+                </div>
+
+                <Badge tone="badge-success">
+                  {project.status}
+                </Badge>
+
+              </div>
+
+
+              <div className="panel-body">
+
+                <p
+                  style={{
+                    color: "var(--color-text-secondary)",
+                    fontSize: 14,
+                    lineHeight: 1.9
+                  }}
+                >
+                  {project.description}
+                </p>
+
+
+                <div
+                  style={{
+                    marginTop: 16,
+                    fontWeight: 700,
+                    fontSize: 14,
+                    color: "var(--color-primary)"
+                  }}
+                >
+                  سوال پژوهشی
+                </div>
+
+
+                <p
+                  style={{
+                    color: "var(--color-text-secondary)",
+                    fontSize: 14,
+                    marginTop: 6
+                  }}
+                >
+                  {project.question}
+                </p>
+
+
+                <div
+                  style={{
+                    marginTop: 16,
+                    fontWeight: 700,
+                    fontSize: 13,
+                    color: "var(--color-primary)"
+                  }}
+                >
+                  مهارت‌های موردنیاز
+                </div>
+
+
+                <div
+                  className="pc-tags"
+                  style={{
+                    marginTop: 8
+                  }}
+                >
+
+                  {
+                    project.requiredSkills.map(
+                      (s) => (
+
+                        <span
+                          key={s}
+                          className="tag"
+                        >
+                          {s}
+                        </span>
+
+                      )
+                    )
+                  }
+
+                </div>
+
+
+                <div className="hero-meta">
+
+                  <span className="meta-pill">
+                    سطح: {project.level}
+                  </span>
+
+                  <span className="meta-pill">
+                    زمان: {project.time}
+                  </span>
+
+                  <span className="meta-pill">
+                    مدت: {project.duration}
+                  </span>
+
+                  <span className="meta-pill">
+                    اعضا: {toFaDigits(project.members)} نفر
+                  </span>
+
+                  <span className="meta-pill">
+                    مهلت: {project.deadline}
+                  </span>
+
+                </div>
+
+              </div>
+
+            </section>
+
+          </div>
+
+
+          <aside className="right-column">
+
+            {match && (
+
+              <section className="panel">
+
+                <div className="panel-head">
+
+                  <div className="panel-title">
+                    امتیاز تطابق شما
+                  </div>
+
+                  <span className="tag tag-pink">
+                    Match Score
+                  </span>
+
+                </div>
+
+
+                <div className="match-card">
+
+                  <div className="match-head">
+
+                    <div className="match-title">
+                      میزان تناسب پروفایل
+                    </div>
+
+                    <ScoreRing
+                      percent={
+                        match.percent
+                      }
+                    />
+
+                  </div>
+
+
+                  <div className="reason-list">
+
+                    {
+                      match.reasons.map(
+                        (r, i) => (
+
+                          <div
+                            key={i}
+                            className={
+                              `reason ${
+                                r.ok
+                                  ? "ok"
+                                  : "no"
+                              }`
+                            }
+                          >
+
+                            <span className="reason-dot">
+                              {
+                                r.ok
+                                  ? "✓"
+                                  : "–"
+                              }
+                            </span>
+
+                            {r.label}
+
+                          </div>
+
+                        )
+                      )
+                    }
+
+                  </div>
+
+                </div>
+
+              </section>
+
+            )}
+
+
+            {student && (
+
+              <section className="panel">
+
+                <div className="panel-head">
+
+                  <div className="panel-title">
+                    درخواست همکاری
+                  </div>
+
+                </div>
+
+
+                <div className="panel-body">
+
+                  {already ? (
+
+                    <Badge tone="badge-success">
+                      درخواست شما ارسال شده است
+                    </Badge>
+
+                  ) : (
+
+                    <div>
+
+                      <Field label="پیام شما برای استاد">
+
+                        <textarea
+                          value={message}
+                          onChange={(e) =>
+                            setMessage(
+                              e.target.value
+                            )
+                          }
+                          placeholder="چرا برای این پروژه مناسب هستید؟"
+                        ></textarea>
+
+                      </Field>
+
+
+                      <button
+                        className="btn btn-primary"
+                        style={{
+                          marginTop: 10,
+                          width: "100%"
+                        }}
+                        onClick={() => {
+
+                          onApply(
+                            project.id,
+                            message
+                          );
+
+                          go(
+                            "myApplications"
+                          );
+
+                        }}
+                      >
+                        ارسال درخواست
+                      </button>
+
+                    </div>
+
+                  )}
+
+                </div>
+
+              </section>
+
+            )}
+
+          </aside>
+
+        </div>
+
+      </main>
+
+    </div>
+
+  );
+}
+
+
+/* =========================================================
+   My Applications
+   ========================================================= */
+
+function MyApplications({
+  go,
+  header,
+  student,
+  applications,
+  projects,
+  professors
+}) {
+
+  const mine =
+    applications.filter(
+      (a) =>
+        a.studentId === student.id
+    );
+
+
+  return (
+
+    <div>
+
+      {header}
+
+      <main>
+
+        <div className="page-intro">
+
+          <div>
+
+            <div className="eyebrow">
+              پیگیری همکاری
+            </div>
+
+            <h1 className="page-title">
+              درخواست‌های من
+            </h1>
+
+            <p className="page-subtitle">
+              وضعیت درخواست‌های همکاری شما در پروژه‌های پژوهشی.
+            </p>
+
+          </div>
+
+        </div>
+
+
+        <div className="app-list">
+
+          {
+            mine.map((a) => {
+
+              const project =
+                projects.find(
+                  (p) =>
+                    p.id ===
+                    a.projectId
+                );
+
+
+              const prof =
+                professors.find(
+                  (p) =>
+                    p.id ===
+                    project?.professorId
+                );
+
+
+              return (
+
+                <article
+                  key={a.id}
+                  className="app-card"
+                  onClick={() =>
+                    go(
+                      a.status ===
+                        "پذیرفته‌شده"
+                        ? "workspace"
+                        : "projectDetails",
+                      {
+                        projectId:
+                          a.projectId
+                      }
+                    )
+                  }
+                >
+
+                  <div className="pc-top">
+
+                    <div>
+
+                      <div className="pc-title">
+                        {project?.title}
+                      </div>
+
+                      <div className="pc-meta">
+                        {prof?.name} · ارسال‌شده در {a.createdAt}
+                      </div>
+
+                    </div>
+
+
+                    <Badge
+                      tone={
+                        statusBadgeClass(
+                          a.status
+                        )
+                      }
+                    >
+                      {a.status}
+                    </Badge>
+
+                  </div>
+
+                </article>
+
+              );
+
+            })
+          }
+
+
+          {!mine.length && (
+
+            <EmptyState
+              title="هنوز درخواستی ارسال نکرده‌اید"
+              body="از فهرست پروژه‌ها یکی را انتخاب کنید و درخواست همکاری بفرستید."
+              cta="مشاهده پروژه‌ها"
+              onClick={() =>
+                go("studentDashboard")
+              }
+            />
+
+          )}
+
+        </div>
+
+      </main>
+
+    </div>
+
+  );
+}
+
+
+/* =========================================================
+   Professor Dashboard
+   ========================================================= */
+
+function ProfessorDashboard({
+  go,
+  header,
+  professor,
+  projects,
+  applications
+}) {
+
+  const mine =
+    projects.filter(
+      (p) =>
+        p.professorId ===
+        professor.id
+    );
+
+
+  return (
+
+    <div>
+
+      {header}
+
+      <main>
+
+        <div className="page-intro">
+
+          <div>
+
+            <div className="eyebrow">
+              خوش آمدید، {professor.name}
+            </div>
+
+            <h1 className="page-title">
+              پروژه‌های پژوهشی من
+            </h1>
+
+            <p className="page-subtitle">
+              {professor.department}
+            </p>
+
+          </div>
+
+
+          <button
+            className="btn btn-primary"
+            onClick={() =>
+              go("createProject")
+            }
+          >
+            + ایجاد پروژه جدید
+          </button>
+
+        </div>
+
+
+        <div className="project-list">
+
+          {
+            mine.map((p) => {
+
+              const appCount =
+                applications.filter(
+                  (a) =>
+                    a.projectId ===
+                    p.id
+                ).length;
+
+
+              return (
+
+                <article
+                  key={p.id}
+                  className="project-card"
+                  onClick={() =>
+                    go(
+                      "projectApplicants",
+                      {
+                        projectId:
+                          p.id
+                      }
+                    )
+                  }
+                >
+
+                  <div className="pc-top">
+
+                    <div>
+
+                      <div className="pc-title">
+                        {p.title}
+                      </div>
+
+                      <div className="pc-meta">
+                        {p.field} · {p.type}
+                      </div>
+
+                      <div className="pc-tags">
+
+                        <Badge tone="badge-success">
+                          {p.status}
+                        </Badge>
+
+                        <Badge tone="badge-cyan">
+                          {toFaDigits(appCount)} متقاضی
+                        </Badge>
+
+                      </div>
+
+                    </div>
+
+                  </div>
+
+                </article>
+
+              );
+
+            })
+          }
+
+
+          {!mine.length && (
+
+            <EmptyState
+              title="هنوز پروژه‌ای ثبت نکرده‌اید"
+              body="با ایجاد یک پروژه، دانشجویان می‌توانند درخواست همکاری بفرستند."
+              cta="ایجاد پروژه"
+              onClick={() =>
+                go("createProject")
+              }
+            />
+
+          )}
+
+        </div>
+
+      </main>
+
+    </div>
+
+  );
+}
+
+
+/* =========================================================
+   Create Project
+   ========================================================= */
+
+function CreateProject({
+  go,
+  header,
+  professor,
+  onCreate
+}) {
+
+  const [form, setForm] =
+    useState({
+      title: "",
+      field: FIELDS[0],
+      type: TYPES[0],
+      description: "",
+      question: "",
+      requiredSkills: [],
+      level: LEVELS[0],
+      members: 2,
+      time: HOURS[1],
+      duration: DURATIONS[1],
+      deadline: ""
+    });
+
+
+  const toggle = (
+    list,
+    val
+  ) =>
+    list.includes(val)
+      ? list.filter(
+          (x) => x !== val
+        )
+      : [...list, val];
+
+
+  const valid =
+    form.title &&
+    form.description;
+
+
+  return (
+
+    <div>
+
+      {header}
+
+      <main>
+
+        <div
+          style={{
+            maxWidth: 720,
+            margin: "0 auto"
+          }}
+        >
+
+          <div
+            className="back-link"
+            onClick={() =>
+              go("professorDashboard")
+            }
+          >
+            → بازگشت به داشبورد
+          </div>
+
+
+          <div className="page-intro">
+
+            <div>
+
+              <h1 className="page-title">
+                ایجاد پروژه پژوهشی جدید
+              </h1>
+
+              <p className="page-subtitle">
+                اطلاعات زیر به دانشجویان کمک می‌کند بهترین تصمیم را برای درخواست همکاری بگیرند.
+              </p>
+
+            </div>
+
+          </div>
+
+
+          <div className="panel">
+
+            <div className="panel-body">
+
+              <div className="form-grid">
+
+                <div className="field full">
+
+                  <label>
+                    عنوان پروژه
+                  </label>
+
+                  <input
+                    value={form.title}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        title:
+                          e.target.value
+                      })
+                    }
+                    placeholder="مثال: بررسی نشانگرهای زیستی..."
+                  />
+
+                </div>
+
+
+                <Field label="حوزه پژوهشی">
+
+                  <select
+                    value={form.field}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        field:
+                          e.target.value
+                      })
+                    }
+                  >
+
+                    {
+                      FIELDS.map(
+                        (f) => (
+
+                          <option key={f}>
+                            {f}
+                          </option>
+
+                        )
+                      )
+                    }
+
+                  </select>
+
+                </Field>
+
+
+                <Field label="نوع پژوهش">
+
+                  <select
+                    value={form.type}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        type:
+                          e.target.value
+                      })
+                    }
+                  >
+
+                    {
+                      TYPES.map(
+                        (t) => (
+
+                          <option key={t}>
+                            {t}
+                          </option>
+
+                        )
+                      )
+                    }
+
+                  </select>
+
+                </Field>
+
+
+                <div className="field full">
+
+                  <label>
+                    توضیحات پروژه
+                  </label>
+
+                  <textarea
+                    value={form.description}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        description:
+                          e.target.value
+                      })
+                    }
+                    placeholder="خلاصه‌ای از پروژه بنویسید..."
+                  ></textarea>
+
+                </div>
+
+
+                <div className="field full">
+
+                  <label>
+                    سوال پژوهشی
+                  </label>
+
+                  <textarea
+                    value={form.question}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        question:
+                          e.target.value
+                      })
+                    }
+                    placeholder="این پروژه به دنبال پاسخ چه سوالی است؟"
+                  ></textarea>
+
+                </div>
+
+
+                <div className="field full">
+
+                  <label>
+                    مهارت‌های موردنیاز
+                  </label>
+
+                  <div className="chip-group">
+
+                    {
+                      SKILLS.map(
+                        (s) => (
+
+                          <Chip
+                            key={s}
+                            label={s}
+                            active={
+                              form.requiredSkills.includes(s)
+                            }
+                            onClick={() =>
+                              setForm({
+                                ...form,
+                                requiredSkills:
+                                  toggle(
+                                    form.requiredSkills,
+                                    s
+                                  )
+                              })
+                            }
+                          />
+
+                        )
+                      )
+                    }
+
+                  </div>
+
+                </div>
+
+
+                <Field label="سطح تحصیلی موردنیاز">
+
+                  <select
+                    value={form.level}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        level:
+                          e.target.value
+                      })
+                    }
+                  >
+
+                    {
+                      LEVELS.map(
+                        (l) => (
+
+                          <option key={l}>
+                            {l}
+                          </option>
+
+                        )
+                      )
+                    }
+
+                  </select>
+
+                </Field>
+
+
+                <Field label="تعداد اعضای موردنیاز">
+
+                  <input
+                    type="number"
+                    min="1"
+                    value={form.members}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        members:
+                          Number(
+                            e.target.value
+                          )
+                      })
+                    }
+                  />
+
+                </Field>
+
+
+                <Field label="زمان موردنیاز در هفته">
+
+                  <select
+                    value={form.time}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        time:
+                          e.target.value
+                      })
+                    }
+                  >
+
+                    {
+                      HOURS.map(
+                        (h) => (
+
+                          <option key={h}>
+                            {h}
+                          </option>
+
+                        )
+                      )
+                    }
+
+                  </select>
+
+                </Field>
+
+
+                <Field label="مدت زمان پروژه">
+
+                  <select
+                    value={form.duration}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        duration:
+                          e.target.value
+                      })
+                    }
+                  >
+
+                    {
+                      DURATIONS.map(
+                        (d) => (
+
+                          <option key={d}>
+                            {d}
+                          </option>
+
+                        )
+                      )
+                    }
+
+                  </select>
+
+                </Field>
+
+
+                <Field label="مهلت ارسال درخواست">
+
+                  <input
+                    type="text"
+                    placeholder="۱۴۰۵/۰۸/۰۱"
+                    value={form.deadline}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        deadline:
+                          e.target.value
+                      })
+                    }
+                  />
+
+                </Field>
+
+              </div>
+
+
+              <div
+                className="form-actions"
+                style={{
+                  marginTop: 14
+                }}
+              >
+
+                <button
+                  className="btn btn-primary"
+                  disabled={!valid}
+                  onClick={() =>
+                    valid &&
+                    onCreate({
+                      ...form,
+                      professorId:
+                        professor.id
+                    })
+                  }
+                >
+                  انتشار پروژه
+                </button>
+
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+
+      </main>
+
+    </div>
+
+  );
+}
+
+
+/* =========================================================
+   Project Applicants
+   ========================================================= */
+
+function ProjectApplicants({
+  go,
+  header,
+  projectId,
+  projects,
+  applications,
+  students,
+  onStatus
+}) {
+
+  const project =
+    projects.find(
+      (p) =>
+        p.id === projectId
+    );
+
+
+  const apps =
+    applications
+      .filter(
+        (a) =>
+          a.projectId === projectId
+      )
+      .map((a) => {
+
+        const student =
+          students.find(
+            (s) =>
+              s.id ===
+              a.studentId
+          );
+
+
+        return {
+          a,
+          student,
+          match:
+            matchStudentToProject(
+              student,
+              project
+            )
+        };
+
+      })
+      .sort(
+        (x, y) =>
+          y.match.percent -
+          x.match.percent
+      );
+
+
+  return (
+
+    <div>
+
+      {header}
+
+      <main>
+
+        <div
+          className="back-link"
+          onClick={() =>
+            go("professorDashboard")
+          }
+        >
+          → بازگشت به داشبورد
+        </div>
+
+
+        <div className="page-intro">
+
+          <div>
+
+            <h1 className="page-title">
+              {project?.title}
+            </h1>
+
+            <p className="page-subtitle">
+              متقاضیان ({toFaDigits(apps.length)})
+            </p>
+
+          </div>
+
+        </div>
+
+
+        <div className="applicant-list">
+
+          {
+            apps.map(
+              ({
+                a,
+                student,
+                match
+              }) => (
+
+                <article
+                  key={a.id}
+                  className="applicant-card"
+                >
+
+                  <div className="pc-top">
+
+                    <div>
+
+                      <div className="pc-title">
+                        {student?.name}
+                      </div>
+
+                      <div className="pc-meta">
+                        {student?.university} · {student?.level}
+                      </div>
+
+                      <p
+                        style={{
+                          fontSize: 13,
+                          color: "var(--color-text)",
+                          marginTop: 8,
+                          maxWidth: 480
+                        }}
+                      >
+                        {a.message}
+                      </p>
+
+                    </div>
+
+
+                    <ScoreRing
+                      percent={
+                        match.percent
+                      }
+                    />
+
+                  </div>
+
+
+                  <div
+                    className="pc-actions"
+                    style={{
+                      justifyContent:
+                        "space-between",
+                      alignItems:
+                        "center"
+                    }}
+                  >
+
+                    <Badge
+                      tone={
+                        statusBadgeClass(
+                          a.status
+                        )
+                      }
+                    >
+                      {a.status}
+                    </Badge>
+
+
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 8
+                      }}
+                    >
+
+                      {
+                        a.status !== "فهرست کوتاه" &&
+                        a.status !== "پذیرفته‌شده" && (
+
+                          <button
+                            className="btn btn-outline btn-sm"
+                            onClick={() =>
+                              onStatus(
+                                a.id,
+                                "فهرست کوتاه"
+                              )
+                            }
+                          >
+                            فهرست کوتاه
+                          </button>
+
+                        )
+                      }
+
+
+                      {
+                        a.status !== "پذیرفته‌شده" && (
+
+                          <button
+                            className="btn btn-primary btn-sm"
+                            onClick={() =>
+                              onStatus(
+                                a.id,
+                                "پذیرفته‌شده"
+                              )
+                            }
+                          >
+                            پذیرش
+                          </button>
+
+                        )
+                      }
+
+
+                      {
+                        a.status !== "رد شده" &&
+                        a.status !== "پذیرفته‌شده" && (
+
+                          <button
+                            className="btn btn-danger btn-sm"
+                            onClick={() =>
+                              onStatus(
+                                a.id,
+                                "رد شده"
+                              )
+                            }
+                          >
+                            رد
+                          </button>
+
+                        )
+                      }
+
+                    </div>
+
+                  </div>
+
+                </article>
+
+              )
+            )
+          }
+
+
+          {!apps.length && (
+
+            <EmptyState
+              title="هنوز متقاضی‌ای نیست"
+              body="با ارسال درخواست دانشجویان، آن‌ها اینجا نمایش داده می‌شوند."
+            />
+
+          )}
+
+        </div>
+
+      </main>
+
+    </div>
+
+  );
+}
+
+
+/* =========================================================
+   Workspace
+   ========================================================= */
+
+function Workspace({
+  go,
+  header,
+  projectId,
+  projects,
+  professors,
+  students,
+  applications,
+  role
+}) {
+
+  const project =
+    projects.find(
+      (p) =>
+        p.id === projectId
+    );
+
+
+  const professor =
+    professors.find(
+      (p) =>
+        p.id ===
+        project?.professorId
+    );
+
+
+  const members =
+    applications
+      .filter(
+        (a) =>
+          a.projectId === projectId &&
+          a.status === "پذیرفته‌شده"
+      )
+      .map(
+        (a) =>
+          students.find(
+            (s) =>
+              s.id ===
+              a.studentId
+          )
+      );
+
+
+  const [tasks, setTasks] =
+    useState([
+      {
+        id: "t1",
+        title: "تکمیل جست‌وجوی متون",
+        assignee:
+          members[0]?.name ||
+          "تعیین‌نشده",
+        status: "در حال انجام"
+      },
+      {
+        id: "t2",
+        title: "پیش‌نویس پروتکل جمع‌آوری داده",
+        assignee: "تعیین‌نشده",
+        status: "برای انجام"
+      }
+    ]);
+
+
+  return (
+
+    <div>
+
+      {header}
+
+      <main>
+
+        <div
+          className="back-link"
+          onClick={() =>
+            go(
+              role === "student"
+                ? "myApplications"
+                : "professorDashboard"
+            )
+          }
+        >
+          → بازگشت
+        </div>
+
+
+        <div className="page-intro">
+
+          <div>
+
+            <h1 className="page-title">
+              {project?.title} — فضای کار
+            </h1>
+
+          </div>
+
+        </div>
+
+
+        <div className="content-grid">
+
+          <div className="left-column">
+
+            <section className="panel">
+
+              <div className="panel-head">
+
+                <div className="panel-title">
+                  وظایف
+                </div>
+
+              </div>
+
+
+              <div className="panel-body">
+
+                {
+                  tasks.map((t) => (
+
+                    <div
+                      key={t.id}
+                      className="task-row"
+                    >
+
+                      <div>
+
+                        <div className="task-title">
+                          {t.title}
+                        </div>
+
+                        <div className="task-assignee">
+                          محول‌شده به {t.assignee}
+                        </div>
+
+                      </div>
+
+
+                      <select
+                        value={t.status}
+                        onChange={(e) =>
+                          setTasks(
+                            tasks.map(
+                              (x) =>
+                                x.id === t.id
+                                  ? {
+                                      ...x,
+                                      status:
+                                        e.target.value
+                                    }
+                                  : x
+                            )
+                          )
+                        }
+                        style={{
+                          width: 150,
+                          border:
+                            "1px solid var(--color-border)",
+                          borderRadius:
+                            "var(--radius-sm)",
+                          padding:
+                            ".5rem .6rem",
+                          background:
+                            "var(--color-surface-soft)"
+                        }}
+                      >
+
+                        {
+                          [
+                            "برای انجام",
+                            "در حال انجام",
+                            "انجام‌شده"
+                          ].map(
+                            (s) => (
+
+                              <option
+                                key={s}
+                                value={s}
+                              >
+                                {s}
+                              </option>
+
+                            )
+                          )
+                        }
+
+                      </select>
+
+                    </div>
+
+                  ))
+                }
+
+              </div>
+
+            </section>
+
+          </div>
+
+
+          <aside className="right-column">
+
+            <section className="panel">
+
+              <div className="panel-head">
+
+                <div className="panel-title">
+                  اعضا
+                </div>
+
+              </div>
+
+
+              <div className="panel-body">
+
+                <div className="member-row">
+
+                  <span className="avatar">
+                    {professor?.name?.[4]}
+                  </span>
+
+                  {professor?.name} — استاد
+
+                </div>
+
+
+                {
+                  members.map(
+                    (m) =>
+                      m && (
+
+                        <div
+                          key={m.id}
+                          className="member-row"
+                        >
+
+                          <span className="avatar">
+                            {m.name[0]}
+                          </span>
+
+                          {m.name} — دانشجو
+
+                        </div>
+
+                      )
+                  )
+                }
+
+              </div>
+
+            </section>
+
+
+            <section className="panel">
+
+              <div className="panel-head">
+
+                <div className="panel-title">
+                  مرور کلی
+                </div>
+
+              </div>
+
+
+              <div className="panel-body">
+
+                <p
+                  style={{
+                    fontSize: 13,
+                    color:
+                      "var(--color-text-secondary)",
+                    lineHeight: 1.8
+                  }}
+                >
+                  {project?.description}
+                </p>
+
+              </div>
+
+            </section>
+
+          </aside>
+
+        </div>
+
+      </main>
+
+    </div>
+
+  );
+}
+
+
+/* =========================================================
+   Main App
+   ========================================================= */
+
+function ResearchLink() {
+
+  const [route, setRoute] =
+    useState({
+      page: "landing"
+    });
+
+
+  const [role, setRole] =
+    useState(null);
+
+
+  const [currentUserId, setCurrentUserId] =
+    useState(null);
+
+
+  const [students, setStudents] =
+    useState(seedStudents);
+
+
+  const [professors] =
+    useState(seedProfessors);
+
+
+  const [projects, setProjects] =
+    useState(seedProjects);
+
+
+  const [applications, setApplications] =
+    useState(seedApplications);
+
+
+  const currentStudent =
+    students.find(
+      (s) =>
+        s.id === currentUserId
+    );
+
+
+  const currentProfessor =
+    professors.find(
+      (p) =>
+        p.id === currentUserId
+    );
+
+
+  function go(
+    page,
+    params = {}
+  ) {
+
+    setRoute({
+      page,
+      ...params
+    });
+
+    window.scrollTo(
+      0,
+      0
+    );
+  }
+
+
+  function login(
+    r,
+    id
+  ) {
+
+    setRole(r);
+
+    setCurrentUserId(id);
+
+    go(
+      r === "student"
+        ? "studentDashboard"
+        : "professorDashboard"
+    );
+  }
+
+
+  function logout() {
+
+    setRole(null);
+
+    setCurrentUserId(null);
+
+    go("landing");
+  }
+
+
+  function createStudent(profile) {
+
+    const id =
+      "s" +
+      (students.length + 1) +
+      "_" +
+      Date.now();
+
+
+    const student = {
+      id,
+      ...profile
+    };
+
+
+    setStudents(
+      (prev) => [
+        ...prev,
+        student
+      ]
+    );
+
+
+    login(
+      "student",
+      id
+    );
+  }
+
+
+  function createProject(data) {
+
+    const id =
+      "pr" +
+      (projects.length + 1) +
+      "_" +
+      Date.now();
+
+
+    setProjects(
+      (prev) => [
+        ...prev,
+        {
+          id,
+          status: "باز",
+          ...data
+        }
+      ]
+    );
+
+
+    go(
+      "professorDashboard"
+    );
+  }
+
+
+  function applyToProject(
+    projectId,
+    message
+  ) {
+
+    const id =
+      "a" +
+      (applications.length + 1) +
+      "_" +
+      Date.now();
+
+
+    setApplications(
+      (prev) => [
+        ...prev,
+        {
+          id,
+          projectId,
+          studentId:
+            currentUserId,
+          status:
+            "ارسال‌شده",
+          message,
+          createdAt:
+            "امروز"
+        }
+      ]
+    );
+  }
+
+
+  function setApplicationStatus(
+    appId,
+    status
+  ) {
+
+    setApplications(
+      (prev) =>
+        prev.map(
+          (a) =>
+            a.id === appId
+              ? {
+                  ...a,
+                  status
+                }
+              : a
+        )
+    );
+  }
+
+
+  const studentNav = [
+    {
+      page: "studentDashboard",
+      label: "پیشخوان"
+    },
+    {
+      page: "myApplications",
+      label: "درخواست‌های من"
+    }
+  ];
+
+
+  const professorNav = [
+    {
+      page: "professorDashboard",
+      label: "پروژه‌های من"
+    },
+    {
+      page: "createProject",
+      label: "ایجاد پروژه"
+    }
+  ];
+
+
+  const header =
+    role && (
+
+      <AppHeader
+        go={go}
+        role={role}
+        currentUser={
+          role === "student"
+            ? currentStudent
+            : currentProfessor
+        }
+        navItems={
+          role === "student"
+            ? studentNav
+            : professorNav
+        }
+        activePage={
+          route.page
+        }
+        logout={logout}
+      />
+
+    );
+
+
+  switch (route.page) {
+
+    case "landing":
+
+      return (
+        <Landing
+          go={go}
+        />
+      );
+
+
+    case "auth":
+
+      return (
+        <AuthScreen
+          go={go}
+          initialRole={
+            route.role
+          }
+          onLogin={login}
+          students={students}
+          professors={professors}
+        />
+      );
+
+
+    case "onboarding":
+
+      return (
+        <Onboarding
+          go={go}
+          onCreate={
+            createStudent
+          }
+        />
+      );
+
+
+    case "studentDashboard":
+
+      return currentStudent
+        ? (
+            <StudentDashboard
+              go={go}
+              header={header}
+              student={
+                currentStudent
+              }
+              projects={
+                projects
+              }
+              professors={
+                professors
+              }
+            />
+          )
+        : (
+            <Landing
+              go={go}
+            />
+          );
+
+
+    case "projectDetails":
+
+      return (
+        <ProjectDetails
+          go={go}
+          header={
+            header ||
+            <AppHeader
+              go={go}
+              role={null}
+              currentUser={null}
+              navItems={[]}
+              activePage={
+                route.page
+              }
+              logout={logout}
+            />
+          }
+          projectId={
+            route.projectId
+          }
+          projects={
+            projects
+          }
+          professors={
+            professors
+          }
+          student={
+            currentStudent
+          }
+          applications={
+            applications
+          }
+          onApply={
+            applyToProject
+          }
+        />
+      );
+
+
+    case "myApplications":
+
+      return currentStudent
+        ? (
+            <MyApplications
+              go={go}
+              header={header}
+              student={
+                currentStudent
+              }
+              applications={
+                applications
+              }
+              projects={
+                projects
+              }
+              professors={
+                professors
+              }
+            />
+          )
+        : (
+            <Landing
+              go={go}
+            />
+          );
+
+
+    case "professorDashboard":
+
+      return currentProfessor
+        ? (
+            <ProfessorDashboard
+              go={go}
+              header={header}
+              professor={
+                currentProfessor
+              }
+              projects={
+                projects
+              }
+              applications={
+                applications
+              }
+            />
+          )
+        : (
+            <Landing
+              go={go}
+            />
+          );
+
+
+    case "createProject":
+
+      return currentProfessor
+        ? (
+            <CreateProject
+              go={go}
+              header={header}
+              professor={
+                currentProfessor
+              }
+              onCreate={
+                createProject
+              }
+            />
+          )
+        : (
+            <Landing
+              go={go}
+            />
+          );
+
+
+    case "projectApplicants":
+
+      return currentProfessor
+        ? (
+            <ProjectApplicants
+              go={go}
+              header={header}
+              projectId={
+                route.projectId
+              }
+              projects={
+                projects
+              }
+              applications={
+                applications
+              }
+              students={
+                students
+              }
+              onStatus={
+                setApplicationStatus
+              }
+            />
+          )
+        : (
+            <Landing
+              go={go}
+            />
+          );
+
+
+    case "workspace":
+
+      return (
+        <Workspace
+          go={go}
+          header={header}
+          projectId={
+            route.projectId
+          }
+          projects={
+            projects
+          }
+          professors={
+            professors
+          }
+          students={
+            students
+          }
+          applications={
+            applications
+          }
+          role={role}
+        />
+      );
+
+
+    default:
+
+      return (
+        <Landing
+          go={go}
+        />
+      );
+
+  }
+
+}
+
+
+/* =========================================================
+   Mount React
+   ========================================================= */
+
+try {
+
+  ReactDOM
+    .createRoot(
+      document.getElementById(
+        'root'
+      )
+    )
+    .render(
+      <ResearchLink />
+    );
+
+
+  window.__RL_MOUNTED__ = true;
+
+} catch (err) {
+
+  var box =
+    document.getElementById(
+      'error-box'
+    );
+
+  box.style.display =
+    'block';
+
+  box.textContent =
+    'خطای React: ' +
+    err.message +
+    '\n' +
+    (err.stack || '');
+
+}
+
+</script>
+
+</body>
+</html>
